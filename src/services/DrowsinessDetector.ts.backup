@@ -1,0 +1,270 @@
+import { create } from 'zustand';
+import { useBLEStore } from './BLEService';
+import { useLocationStore } from './LocationService';
+import * as Haptics from 'expo-haptics';
+import { Platform } from 'react-native';
+import { Audio } from 'expo-av';
+import { Vibration } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import VolumeManager from 'react-native-volume-manager';
+import RNImmediatePhoneCall from 'react-native-immediate-phone-call';
+import VolumeModule from '../native/VolumeModule';
+import { useCoffeeRadarStore } from './CoffeeRadarService';
+
+export type FatigueLevel = 'none' | 'low' | 'medium' | 'high' | 'critical';
+
+interface DrowsinessState {
+    isDrowsy: boolean;
+    drowsinessLevel: number; // 0-100
+    fatigueLevel: FatigueLevel; // Multi-level fatigue
+    history: { timestamp: number; level: number; fatigueLevel: FatigueLevel }[];
+    emergencyContact: string;
+    countdown: number; // Seconds remaining for auto-call
+    setEmergencyContact: (contact: string) => Promise<void>;
+    loadEmergencyContact: () => Promise<void>;
+    checkDrowsiness: (pitch: number) => void;
+    resetAlert: () => void;
+    triggerAlert: () => Promise<void>;
+}
+
+const DROWSINESS_THRESHOLD_PITCH = -30; // Degrees. If pitch < -30, head is down.
+const TIME_THRESHOLD_MS = 2000; // Time below threshold to trigger alert
+const AUTO_CALL_DELAY_SEC = 30;
+
+// Multi-level thresholds
+const FATIGUE_THRESHOLDS = {
+    LOW: { pitch: -15, time: 500, eyesClosed: 2000 },      // Head tilted slightly
+    MEDIUM: { pitch: -20, time: 1000, eyesClosed: 3000 },  // Coffee Radar trigger
+    HIGH: { pitch: -25, time: 1500, eyesClosed: 5000 },    // Yellow alert
+    CRITICAL: { pitch: -30, time: 2000, eyesClosed: 7000 }, // Red alert + siren
+};
+
+let drowsyStartTime: number | null = null;
+let soundObject: Audio.Sound | null = null;
+let countdownInterval: NodeJS.Timeout | null = null;
+let originalVolume: number | null = null;
+
+export const useDrowsinessStore = create<DrowsinessState>((set, get) => ({
+    isDrowsy: false,
+    drowsinessLevel: 0,
+    fatigueLevel: 'none',
+    history: [],
+    emergencyContact: '112', // Default emergency
+    countdown: AUTO_CALL_DELAY_SEC,
+
+    setEmergencyContact: async (contact: string) => {
+        set({ emergencyContact: contact });
+        await AsyncStorage.setItem('emergencyContact', contact);
+    },
+
+    loadEmergencyContact: async () => {
+        const saved = await AsyncStorage.getItem('emergencyContact');
+        if (saved) {
+            set({ emergencyContact: saved });
+        }
+        // Load history
+        const savedHistory = await AsyncStorage.getItem('drowsinessHistory');
+        if (savedHistory) {
+            try {
+                set({ history: JSON.parse(savedHistory) });
+            } catch (e) {
+                console.log('Error loading history:', e);
+            }
+        }
+    },
+
+    checkDrowsiness: (pitch: number) => {
+        const { isDriving } = useLocationStore.getState();
+        const { isDrowsy, fatigueLevel: currentFatigueLevel } = get();
+
+        console.log('CheckDrowsiness:', { pitch, isDriving, isDrowsy, currentFatigueLevel });
+
+        // Only check if driving
+        if (!isDriving) {
+            drowsyStartTime = null;
+            if (currentFatigueLevel !== 'none') {
+                set({ fatigueLevel: 'none', drowsinessLevel: 0 });
+            }
+            return;
+        }
+
+        // Check both gyroscope AND camera (if available)
+        let cameraDetection = false;
+        let eyesClosedDuration = 0;
+        try {
+            const { useEyeDetectionStore } = require('./EyeDetectionService');
+            const eyeState = useEyeDetectionStore.getState();
+            cameraDetection = eyeState.isEyesClosed;
+            eyesClosedDuration = eyeState.eyesClosedDuration || 0;
+        } catch (e) {
+            // Camera not available, use only gyro
+        }
+
+        // Determine fatigue level based on pitch and eye closure
+        let detectedLevel: FatigueLevel = 'none';
+        let shouldTrack = false;
+
+        // Check critical first (most severe)
+        if (pitch < FATIGUE_THRESHOLDS.CRITICAL.pitch || eyesClosedDuration > FATIGUE_THRESHOLDS.CRITICAL.eyesClosed) {
+            detectedLevel = 'critical';
+            shouldTrack = true;
+        } else if (pitch < FATIGUE_THRESHOLDS.HIGH.pitch || eyesClosedDuration > FATIGUE_THRESHOLDS.HIGH.eyesClosed) {
+            detectedLevel = 'high';
+            shouldTrack = true;
+        } else if (pitch < FATIGUE_THRESHOLDS.MEDIUM.pitch || eyesClosedDuration > FATIGUE_THRESHOLDS.MEDIUM.eyesClosed) {
+            detectedLevel = 'medium';
+            shouldTrack = true;
+        } else if (pitch < FATIGUE_THRESHOLDS.LOW.pitch || eyesClosedDuration > FATIGUE_THRESHOLDS.LOW.eyesClosed) {
+            detectedLevel = 'low';
+            shouldTrack = true;
+        }
+
+        if (shouldTrack) {
+            if (!drowsyStartTime) {
+                drowsyStartTime = Date.now();
+                console.log(`Fatigue timer started for level: ${detectedLevel}`);
+            } else {
+                const duration = Date.now() - drowsyStartTime;
+                const threshold = FATIGUE_THRESHOLDS[
+                    detectedLevel.toUpperCase() as keyof typeof FATIGUE_THRESHOLDS
+                ].time;
+
+                console.log(`Fatigue duration: ${duration}ms (threshold: ${threshold}ms)`);
+
+                if (duration > threshold) {
+                    // Update fatigue level
+                    if (currentFatigueLevel !== detectedLevel) {
+                        console.log(`✅ Fatigue level changed: ${currentFatigueLevel} -> ${detectedLevel}`);
+                        set({ fatigueLevel: detectedLevel });
+
+                        // Trigger Coffee Radar for medium fatigue
+                        if (detectedLevel === 'medium' && !isDrowsy) {
+                            console.log('☕ Triggering Coffee Radar...');
+                            useCoffeeRadarStore.getState().searchNearbyPlaces();
+                        }
+
+                        // Trigger critical alert for critical/high levels
+                        if ((detectedLevel === 'critical' || detectedLevel === 'high') && !isDrowsy) {
+                            console.log('⚠️ TRIGGERING CRITICAL ALERT!');
+                            get().triggerAlert();
+                        }
+                    }
+                }
+            }
+        } else {
+            if (drowsyStartTime) {
+                console.log('Head up / Eyes open - reset timer');
+            }
+            drowsyStartTime = null;
+            if (currentFatigueLevel !== 'none' && !isDrowsy) {
+                set({ fatigueLevel: 'none', drowsinessLevel: 0 });
+            }
+        }
+    },
+
+    triggerAlert: async () => {
+        const { isDrowsy } = get();
+        if (isDrowsy) return; // Already alerting
+
+        console.log('🚨 ALERT TRIGGERED! Starting siren and vibration...');
+
+        // CRITICAL: Force maximum volume on ALL streams for emergency
+        try {
+            console.log('🔊 FORCING MAXIMUM VOLUME ON ALL STREAMS...');
+
+            // Get current volume to restore later
+            const volumeResult = await VolumeManager.getVolume();
+            const currentVolume = typeof volumeResult === 'number' ? volumeResult : volumeResult.volume;
+            originalVolume = currentVolume;
+
+            // Set ALL volume streams to MAXIMUM using native modules
+            // These run in parallel for immediate effect
+            await Promise.all([
+                VolumeManager.setVolume(1.0, { type: 'music' }),
+                VolumeModule.setMaxAlarmVolume(),
+                VolumeModule.setMaxMusicVolume(),
+            ]).catch(e => console.log('Volume override error (non-critical):', e));
+
+            console.log('📢 VOLUME FORCED TO MAXIMUM (100%) - All streams overridden!');
+        } catch (error) {
+            console.log('❌ Volume override failed (will still try to alert):', error);
+            // Continue anyway - better to have low volume alert than no alert
+        }
+
+        const newHistory = [...get().history, { timestamp: Date.now(), level: 100, fatigueLevel: 'critical' as FatigueLevel }];
+
+        set((state) => ({
+            isDrowsy: true,
+            drowsinessLevel: 100,
+            fatigueLevel: 'critical',
+            history: newHistory,
+            countdown: AUTO_CALL_DELAY_SEC,
+        }));
+
+        // Save history immediately
+        AsyncStorage.setItem('drowsinessHistory', JSON.stringify(newHistory));
+
+    }
+
+        // 2. Vibration (Strong Pattern) - CONTINUOUS until reset
+        Vibration.vibrate([1000, 500], true);
+    console.log('✅ Vibration started!');
+
+    // 3. Countdown Timer for Auto-Call
+    if(countdownInterval) clearInterval(countdownInterval);
+
+        countdownInterval = setInterval(() => {
+        const { countdown, emergencyContact } = get();
+
+        if (countdown <= 1) {
+            // Time's up! Force emergency call
+            if (countdownInterval) clearInterval(countdownInterval);
+
+            set({ countdown: 0 });
+
+            console.log('📞 Calling emergency:', emergencyContact);
+            // Make immediate call without dialer
+            RNImmediatePhoneCall.immediatePhoneCall(emergencyContact);
+            // Sound and vibration KEEP GOING until user manually cancels
+        } else {
+            set({ countdown: countdown - 1 });
+        }
+    }, 1000);
+},
+
+    resetAlert: async () => {
+        // ONLY stop when user manually cancels
+        console.log('Resetting alert...');
+
+        // Restore original volume
+        if (originalVolume !== null) {
+            try {
+                await VolumeManager.setVolume(originalVolume);
+                console.log('📢 Volume restored to:', originalVolume);
+            } catch (error) {
+                console.log('❌ Failed to restore volume:', error);
+            }
+            originalVolume = null;
+        }
+
+        if (soundObject) {
+            await soundObject.stopAsync();
+            await soundObject.unloadAsync();
+            soundObject = null;
+        }
+        Vibration.cancel();
+        if (countdownInterval) clearInterval(countdownInterval);
+
+        set({ isDrowsy: false, drowsinessLevel: 0, countdown: AUTO_CALL_DELAY_SEC });
+        drowsyStartTime = null;
+        console.log('✅ Alert reset complete');
+    },
+}));
+
+// Load emergency contact and history on app start
+useDrowsinessStore.getState().loadEmergencyContact();
+
+// Connect the loop
+useBLEStore.subscribe((state) => {
+    useDrowsinessStore.getState().checkDrowsiness(state.gyroData.pitch);
+});
