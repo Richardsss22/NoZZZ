@@ -1,6 +1,5 @@
 import { create } from 'zustand';
 import { Device, Characteristic, Subscription } from 'react-native-ble-plx';
-import { TranslationKey } from '../i18n/translations';
 
 const SERVICE_UUID = '6E400001-B5A3-F393-E0A9-E50E24DCCA9E';
 const RX_UUID = '6E400002-B5A3-F393-E0A9-E50E24DCCA9E'; // write
@@ -88,11 +87,11 @@ interface State {
   subscription: Subscription | null;
 
   phase: Phase;
-  buttonLabel: TranslationKey;
+  buttonLabel: string;
   countdownSec: number | null;
 
   // texto grande por cima do botão (para “Não mexa”, “Pisque”, “A processar…”)
-  statusText: TranslationKey | '';
+  statusText: string;
 
   // últimos dados (se quiseres mostrar junto aos “dados em tempo real”)
   lastMinuteLabel: string | null;
@@ -126,7 +125,7 @@ export const useEogBleStore = create<State>((set, get) => ({
   subscription: null,
 
   phase: 'idle',
-  buttonLabel: 'calibrate',
+  buttonLabel: 'Calibrar',
   countdownSec: null,
   statusText: '',
 
@@ -257,10 +256,24 @@ export const useEogBleStore = create<State>((set, get) => ({
         const valueB64 = c?.value;
         if (!valueB64) return;
 
-        const chunk = atob_custom(valueB64);
-        if (!chunk) return;
-        const lines = chunk.split('\n').map(s => s.trim()).filter(Boolean);
-        for (const l of lines) handleIncomingLine(l);
+        let line = '';
+        try {
+          line = atob_custom(valueB64).trim();
+        } catch (err) {
+          console.log('[EOG] Decode error:', err);
+          return;
+        }
+
+        if (!line) return;
+
+        if (line === 'HEAD_DOWN_7S') {
+          console.log('[EOG] Head down >7.5s -> trigger alarm');
+          const { useEyeDetectionStore } = require('./EyeDetectionService');
+          useEyeDetectionStore.getState().triggerAlarm();
+          return;
+        }
+
+        handleIncomingLine(line);
       });
 
       set({
@@ -269,7 +282,7 @@ export const useEogBleStore = create<State>((set, get) => ({
         subscription: sub,
 
         phase: 'idle',
-        buttonLabel: 'calibrate',
+        buttonLabel: 'Calibrar',
         countdownSec: null,
         statusText: '',
         lastMinuteLabel: null,
@@ -288,29 +301,21 @@ export const useEogBleStore = create<State>((set, get) => ({
     } catch (err) {
       console.log('[EOG] Error attaching:', err);
       set({
-        phase: 'error', statusText: 'connectSensorError',
+        phase: 'error', statusText: 'Erro a ligar ao sensor.',
       });
     }
 
     function handleIncomingLine(line: string) {
       console.log('[EOG] RX:', line);
 
-      if (line === 'HEAD_DOWN_7S') {
-        console.log('[EOG] Head down >7.5s -> trigger alarm');
-        const { useEyeDetectionStore } = require('./EyeDetectionService');
-        useEyeDetectionStore.getState().triggerAlarm();
-        return;
-      }
-
       // 1) Mensagens finais de calibração
-      // REGEX MUITO PERMISSIVO (ignora "Calibração" se estiver estragado o encoding)
       if (/mal.*efetuada/i.test(line) || /tente\s*novamente/i.test(line)) {
         clearTimers();
         set({
           phase: 'idle',
-          buttonLabel: 'calibrate',
-          statusText: 'calibrationFailed',
+          buttonLabel: 'Calibrar',
           countdownSec: null,
+          statusText: 'Calibração mal efetuada',
         });
         return;
       }
@@ -319,15 +324,14 @@ export const useEogBleStore = create<State>((set, get) => ({
         clearTimers();
         set({
           phase: 'ready_blink',
-          buttonLabel: 'blink',
-          statusText: 'calibrationComplete',
+          buttonLabel: 'Pisque',
           countdownSec: null,
+          statusText: 'Calibração concluída',
         });
         return;
       }
 
       // 2) Arrays por minuto vindos do S:
-      // formato: ["M1",12,3,"S-"]
       if (line.startsWith('[') && line.endsWith(']')) {
         try {
           const arr = JSON.parse(line);
@@ -398,7 +402,7 @@ export const useEogBleStore = create<State>((set, get) => ({
       rx: null,
       subscription: null,
       phase: 'idle',
-      buttonLabel: 'calibrate',
+      buttonLabel: 'Calibrar',
       countdownSec: null,
       statusText: '',
       lastMinuteLabel: null,
@@ -419,16 +423,13 @@ export const useEogBleStore = create<State>((set, get) => ({
 
     const write = async (cmd: string) => {
       const payload = btoa_custom(cmd + '\n');
-      // Tenta enviar SEM bloquear (evita crash do BLE em loop ou se ocupado)
       try {
         await rx.writeWithoutResponse(payload);
         return;
       } catch { }
-      // Fallback
       await rx.writeWithResponse(payload);
     };
 
-    // =========================
     // CALIBRAR (C)
     // =========================
     if (phase === 'idle') {
@@ -436,12 +437,10 @@ export const useEogBleStore = create<State>((set, get) => ({
 
       set({
         phase: 'calibrating',
-        buttonLabel: 'abort',
+        buttonLabel: 'Abortar',
         countdownSec: 10,
-        statusText: 'doNotMoveOrBlink',
+        statusText: 'Não mexa nem pisque',
       });
-
-      await write('C');
 
       // countdown local 10s
       let sec = 10;
@@ -451,13 +450,12 @@ export const useEogBleStore = create<State>((set, get) => ({
           set({ countdownSec: sec });
         }
         if (sec <= 0) {
-          // passa para a fase “pisque 10s”
           clearTimers();
           set({
             phase: 'calibrating',
-            buttonLabel: 'abort',
+            buttonLabel: 'Abortar',
             countdownSec: 10,
-            statusText: 'blinkNormally',
+            statusText: 'Pisque normalmente',
           });
 
           let sec2 = 10;
@@ -467,14 +465,12 @@ export const useEogBleStore = create<State>((set, get) => ({
               set({ countdownSec: sec2 });
             }
             if (sec2 <= 0) {
-              // terminou o tempo — agora o ESP32 vai “processar” e depois manda:
-              // "Calibração concluída" OU "Calibração mal efetuada"
               clearTimers();
               set({
                 phase: 'calibrating',
-                buttonLabel: 'abort',
+                buttonLabel: 'Abortar',
                 countdownSec: null,
-                statusText: 'processing',
+                statusText: 'A processar…',
               });
             }
           }, 1000);
@@ -486,35 +482,32 @@ export const useEogBleStore = create<State>((set, get) => ({
       } catch (e) {
         console.log('[EOG] erro a enviar C:', e);
         clearTimers();
-        set({ phase: 'idle', buttonLabel: 'calibrate', countdownSec: null, statusText: 'sendCFailed' });
+        set({ phase: 'idle', buttonLabel: 'Calibrar', countdownSec: null, statusText: 'Falha ao enviar C.' });
       }
 
       return;
     }
 
-    // =========================
     // PISQUE (P)
     // =========================
     if (phase === 'ready_blink') {
       clearTimers();
       set({
         phase: 'baseline',
-        buttonLabel: 'abort',
+        buttonLabel: 'Abortar',
         countdownSec: 30,
-        statusText: 'blinkNormally',
+        statusText: 'Pisque normalmente',
       });
 
-      // countdown local 30s
       let sec = 30;
       countdownTimer = setInterval(() => {
         sec -= 1;
         if (sec >= 0) set({ countdownSec: sec });
         if (sec <= 0) {
           clearTimers();
-          // acabou o P — mostramos “Iniciar”
           set({
             phase: 'ready_start',
-            buttonLabel: 'start',
+            buttonLabel: 'Iniciar',
             countdownSec: null,
             statusText: '',
           });
@@ -525,20 +518,20 @@ export const useEogBleStore = create<State>((set, get) => ({
         await write('P');
       } catch (e) {
         console.log('[EOG] erro a enviar P:', e);
-        set({ phase: 'ready_blink', buttonLabel: 'blink', countdownSec: null, statusText: 'sendPFailed' });
+        clearTimers();
+        set({ phase: 'ready_blink', buttonLabel: 'Pisque', countdownSec: null, statusText: 'Falha ao enviar P.' });
       }
 
       return;
     }
 
-    // =========================
     // INICIAR (S)
     // =========================
     if (phase === 'ready_start' || phase === 'done') {
       clearTimers();
       set({
         phase: 'running',
-        buttonLabel: 'abort',
+        buttonLabel: 'Abortar',
         countdownSec: null,
         statusText: '',
       });
@@ -547,13 +540,12 @@ export const useEogBleStore = create<State>((set, get) => ({
         await write('S');
       } catch (e) {
         console.log('[EOG] erro a enviar S:', e);
-        set({ phase: 'ready_start', buttonLabel: 'start', statusText: 'sendSFailed' });
+        set({ phase: 'ready_start', buttonLabel: 'Iniciar', statusText: 'Falha ao enviar S.' });
       }
 
       return;
     }
 
-    // =========================
     // ABORTAR (X)
     // =========================
     if (phase === 'calibrating' || phase === 'baseline' || phase === 'running') {
@@ -566,7 +558,6 @@ export const useEogBleStore = create<State>((set, get) => ({
     const { rx, phase } = get();
     clearTimers();
 
-    // manda X para o sensor (é isto que te faltava)
     if (rx) {
       const payload = btoa_custom('X\n');
       try {
@@ -576,13 +567,10 @@ export const useEogBleStore = create<State>((set, get) => ({
       }
     }
 
-    // reset UI
-    // - se estava a correr S: volta a “Iniciar”
-    // - se estava em C ou P: volta a “Calibrar”
     if (phase === 'running') {
       set({
         phase: 'ready_start',
-        buttonLabel: 'start',
+        buttonLabel: 'Iniciar',
         countdownSec: null,
         statusText: '',
       });
@@ -591,14 +579,14 @@ export const useEogBleStore = create<State>((set, get) => ({
 
     set({
       phase: 'idle',
-      buttonLabel: 'calibrate',
+      buttonLabel: 'Calibrar',
       lastFlag: null,
       liveTs: null,
       liveEog: null,
       liveRoll: null,
       livePitch: null,
       statusText: '',
-      history: [], // Limpa histórico ao abortar fora de running
+      history: [],
     });
   },
 }));

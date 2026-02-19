@@ -1,6 +1,7 @@
 
 import { View, Text, StyleSheet, Dimensions, ScrollView, Platform, TouchableOpacity } from 'react-native';
 import { useEogBleStore } from '../services/EogBleService';
+import { useBLEStore } from '../services/BLEService';
 import { useThemeStore, getTheme } from '../styles/theme';
 import { useI18nStore } from '../i18n/i18nStore';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -14,7 +15,9 @@ import HeadTrackingVisualizer from '../components/HeadTrackingVisualizer';
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
 export default function SensorScreen() {
+    const { connectedDevice } = useBLEStore();
     const {
+        device,
         phase,
         statusText,
         lastMinuteLabel,
@@ -61,10 +64,10 @@ export default function SensorScreen() {
                                 <Text style={[styles.appSubtitle, { color: colors.textTertiary }]}>{t('biometricFeedback')}</Text>
                             </View>
                         </View>
-                        <View style={[styles.statusBadge, { backgroundColor: phase === 'idle' ? colors.elevated : colors.accentLight }]}>
-                            <View style={[styles.dot, { backgroundColor: phase === 'idle' ? colors.textTertiary : colors.accent }]} />
-                            <Text style={[styles.statusBadgeText, { color: phase === 'idle' ? colors.textSecondary : colors.accentDark }]}>
-                                {phase === 'idle' ? t('offline') : t('online')}
+                        <View style={[styles.statusBadge, { backgroundColor: !connectedDevice ? colors.elevated : colors.accentLight }]}>
+                            <View style={[styles.dot, { backgroundColor: !connectedDevice ? colors.textTertiary : colors.accent }]} />
+                            <Text style={[styles.statusBadgeText, { color: !connectedDevice ? colors.textSecondary : colors.accentDark }]}>
+                                {!connectedDevice ? t('offline') : t('online')}
                             </Text>
                         </View>
                     </View>
@@ -89,6 +92,31 @@ export default function SensorScreen() {
                         <HeadTrackingVisualizer />
                     </View>
 
+                    {/* 2. CALIBRATION SECTION (Only when connected) */}
+                    {connectedDevice && (
+                        <View style={[styles.premiumCard, { backgroundColor: colors.card, borderColor: colors.border }, colors.shadow]}>
+                            <LinearGradient
+                                colors={[colors.accent + '15', 'transparent']}
+                                style={styles.cardGradient}
+                            />
+
+                            {/* Neural EOG Calibration */}
+                            <CalibrationButton />
+
+                            {statusText ? (
+                                <View style={styles.feedbackBox}>
+                                    <Ionicons name="information-circle" size={18} color={colors.accentDark} />
+                                    <Text style={[styles.feedbackText, { color: colors.accentDark }]}>
+                                        {statusText}
+                                    </Text>
+                                </View>
+                            ) : (
+                                <Text style={[styles.helperText, { color: colors.textTertiary }]}>
+                                    {t('adjustSensitivityHint')}
+                                </Text>
+                            )}
+                        </View>
+                    )}
 
                     {/* 3. REAL-TIME STATS */}
                     {lastMinuteLabel && (

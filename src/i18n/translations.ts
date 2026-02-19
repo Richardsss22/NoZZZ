@@ -180,6 +180,7 @@ export const translations = {
         start: 'Iniciar',
         sendPFailed: 'Falha ao enviar P.',
         sendSFailed: 'Falha ao enviar S.',
+        retry: 'Calibrar de Novo',
     },
 
     en: {
@@ -363,6 +364,7 @@ export const translations = {
         start: 'Start',
         sendPFailed: 'Failed to send P.',
         sendSFailed: 'Failed to send S.',
+        retry: 'Retry',
     },
 };
 

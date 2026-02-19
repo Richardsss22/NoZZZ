@@ -33,15 +33,23 @@ export default function CalibrationButton() {
     if (!connectedDevice) return null;
 
     const isAborting = (phase === 'calibrating' || phase === 'baseline' || phase === 'running');
-    const buttonBg = isAborting ? colors.danger : colors.accent;
+
+    // Determine button background color
+    let buttonBg = colors.accent;
+    if (isAborting) buttonBg = colors.danger;
+
+    // Determine text color
     const textColor = (isDarkMode && accent === 'black' && !isAborting) ? '#000' : '#FFF';
+
+    // Determine label
+    const labelKey = buttonLabel;
 
     return (
         <View style={styles.container}>
             {/* Show instructional text if present */}
             {!!statusText && (
                 <Text style={[styles.statusText, { color: colors.text }]}>
-                    {t(statusText as any)}
+                    {statusText}
                     {typeof countdownSec === 'number' ? ` ${countdownSec}` : ''}
                 </Text>
             )}
@@ -54,7 +62,7 @@ export default function CalibrationButton() {
                 onPress={pressMainButton}
             >
                 <Text style={[styles.text, { color: textColor }]}>
-                    {t(buttonLabel)}
+                    {labelKey}
                     {/* Hide countdown in button if it's already shown in statusText */}
                     {!statusText && typeof countdownSec === 'number' ? ` ${countdownSec}` : ''}
                 </Text>
