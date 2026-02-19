@@ -11,6 +11,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import AmbientBackground from '../components/AmbientBackground';
 import HeadTrackingVisualizer from '../components/HeadTrackingVisualizer';
+import Compass from '../components/Compass';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
@@ -64,11 +65,14 @@ export default function SensorScreen() {
                                 <Text style={[styles.appSubtitle, { color: colors.textTertiary }]}>{t('biometricFeedback')}</Text>
                             </View>
                         </View>
-                        <View style={[styles.statusBadge, { backgroundColor: !connectedDevice ? colors.elevated : colors.accentLight }]}>
-                            <View style={[styles.dot, { backgroundColor: !connectedDevice ? colors.textTertiary : colors.accent }]} />
-                            <Text style={[styles.statusBadgeText, { color: !connectedDevice ? colors.textSecondary : colors.accentDark }]}>
-                                {!connectedDevice ? t('offline') : t('online')}
-                            </Text>
+                        <View style={styles.headerRight}>
+                            <View style={[styles.statusBadge, { backgroundColor: !connectedDevice ? colors.elevated : colors.accentLight }]}>
+                                <View style={[styles.dot, { backgroundColor: !connectedDevice ? colors.textTertiary : colors.accent }]} />
+                                <Text style={[styles.statusBadgeText, { color: !connectedDevice ? colors.textSecondary : colors.accentDark }]}>
+                                    {!connectedDevice ? t('offline') : t('online')}
+                                </Text>
+                            </View>
+                            <Compass />
                         </View>
                     </View>
                 </View>
@@ -238,6 +242,11 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
+    },
+    headerRight: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
     },
     headerLeft: {
         flexDirection: 'row',

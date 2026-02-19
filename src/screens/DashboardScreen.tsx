@@ -23,6 +23,7 @@ import { sendEmergencyNotification } from '../services/NotificationService';
 import { useEogBleStore } from '../services/EogBleService';
 
 import BluetoothConnectionModal from '../components/BluetoothConnectionModal';
+import Compass from '../components/Compass';
 
 export default function DashboardScreen({ navigation }: any) {
     const { isConnected, isScanning, startScanning, disconnect, gyroData, batteryLevel } = useBLEStore();
@@ -191,12 +192,15 @@ export default function DashboardScreen({ navigation }: any) {
                                 <Text style={[styles.appSubtitle, { color: colors.textTertiary }]}>Drive Intelligence</Text>
                             </View>
                         </View>
-                        <TouchableOpacity
-                            onPress={() => navigation.navigate('Settings')}
-                            style={[styles.headerIconButton, { backgroundColor: colors.elevated }]}
-                        >
-                            <Ionicons name="settings-outline" size={22} color={colors.textSecondary} />
-                        </TouchableOpacity>
+                        <View style={styles.headerRight}>
+                            <TouchableOpacity
+                                onPress={() => navigation.navigate('Settings')}
+                                style={[styles.headerIconButton, { backgroundColor: colors.elevated }]}
+                            >
+                                <Ionicons name="settings-outline" size={22} color={colors.textSecondary} />
+                            </TouchableOpacity>
+                            <Compass />
+                        </View>
                     </View>
                 </View>
 
@@ -420,6 +424,11 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
+    },
+    headerRight: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
     },
     headerLeft: {
         flexDirection: 'row',
