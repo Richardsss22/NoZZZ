@@ -1,6 +1,6 @@
 // src/screens/HistoryScreen.tsx
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -24,8 +24,14 @@ export default function HistoryScreen({ navigation }: any) {
   const { isDarkMode, accent } = useThemeStore();
   const colors = getTheme(isDarkMode, accent);
   const { t, language } = useI18nStore();
+  const [showAllTrips, setShowAllTrips] = useState(false);
 
-  const trips = useTripHistoryStore((state: any) => state.trips);
+  const rawTrips = useTripHistoryStore((state: any) => state.trips);
+
+  // 1) Sort trips: most recent first
+  const trips = useMemo(() => {
+    return [...rawTrips].sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
+  }, [rawTrips]);
 
   const now = new Date();
   const currentMonth = now.getMonth();
@@ -151,6 +157,22 @@ export default function HistoryScreen({ navigation }: any) {
       .padStart(2, '0')}`;
   };
 
+  // 4) Filtering logic: Last 2 days (Today + Yesterday)
+  const filteredTrips = useMemo(() => {
+    if (showAllTrips) return trips;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const twoDaysAgo = new Date(today.getTime() - 24 * 60 * 60 * 1000); // Start of Yesterday
+
+    return trips.filter((trip: any) => {
+      const tripDate = new Date(trip.startTime);
+      return tripDate >= twoDaysAgo;
+    });
+  }, [trips, showAllTrips]);
+
+  const hasMoreTrips = trips.length > filteredTrips.length;
+
   const monthLabel =
     language === 'pt'
       ? now.toLocaleDateString('pt-PT', { month: 'long', year: 'numeric' })
@@ -256,53 +278,65 @@ export default function HistoryScreen({ navigation }: any) {
               <Text style={[styles.emptyText, { color: colors.textTertiary }]}>Ainda não há viagens registadas.</Text>
             </View>
           ) : (
-            trips.map((trip: any) => (
-              <View key={trip.id} style={[styles.tripCard, { backgroundColor: colors.card, borderColor: colors.border }, colors.shadow]}>
-                <View style={styles.tripHeader}>
-                  <View style={styles.tripDateBox}>
-                    <Text style={[styles.tripDateDay, { color: colors.text }]}>{formatDateLabel(trip.startTime)}</Text>
-                    <Text style={[styles.tripDateTime, { color: colors.textTertiary }]}>{formatTimeRange(trip.startTime, trip.endTime)}</Text>
+            <>
+              {filteredTrips.map((trip: any) => (
+                <View key={trip.id} style={[styles.tripCard, { backgroundColor: colors.card, borderColor: colors.border }, colors.shadow]}>
+                  <View style={styles.tripHeader}>
+                    <View style={styles.tripDateBox}>
+                      <Text style={[styles.tripDateDay, { color: colors.text }]}>{formatDateLabel(trip.startTime)}</Text>
+                      <Text style={[styles.tripDateTime, { color: colors.textTertiary }]}>{formatTimeRange(trip.startTime, trip.endTime)}</Text>
+                    </View>
+                    <View style={[styles.tripDurationBadge, { backgroundColor: colors.elevated }]}>
+                      <Ionicons name="stopwatch-outline" size={14} color={colors.accent} />
+                      <Text style={[styles.tripDurationText, { color: colors.textSecondary }]}>{formatDuration(trip.startTime, trip.endTime)}</Text>
+                    </View>
                   </View>
-                  <View style={[styles.tripDurationBadge, { backgroundColor: colors.elevated }]}>
-                    <Ionicons name="stopwatch-outline" size={14} color={colors.accent} />
-                    <Text style={[styles.tripDurationText, { color: colors.textSecondary }]}>{formatDuration(trip.startTime, trip.endTime)}</Text>
-                  </View>
-                </View>
 
-                <View style={[styles.tripStatsGrid, { borderTopColor: colors.border, borderBottomColor: colors.border }]}>
-                  <View style={styles.tripStat}>
-                    <Text style={[styles.tripStatLabel, { color: colors.textTertiary }]}>{t('distanceLabel')}</Text>
-                    <Text style={[styles.tripStatValue, { color: colors.text }]}>{trip.distanceKm.toFixed(1)} <Text style={styles.unitSmall}>km</Text></Text>
+                  <View style={[styles.tripStatsGrid, { borderTopColor: colors.border, borderBottomColor: colors.border }]}>
+                    <View style={styles.tripStat}>
+                      <Text style={[styles.tripStatLabel, { color: colors.textTertiary }]}>{t('distanceLabel')}</Text>
+                      <Text style={[styles.tripStatValue, { color: colors.text }]}>{trip.distanceKm.toFixed(1)} <Text style={styles.unitSmall}>km</Text></Text>
+                    </View>
+                    <View style={[styles.tripStatDivider, { backgroundColor: colors.border }]} />
+                    <View style={styles.tripStat}>
+                      <Text style={[styles.tripStatLabel, { color: colors.textTertiary }]}>{t('avgSpeed')}</Text>
+                      <Text style={[styles.tripStatValue, { color: colors.text }]}>{Math.round(trip.avgSpeedKmh)} <Text style={styles.unitSmall}>km/h</Text></Text>
+                    </View>
+                    <View style={[styles.tripStatDivider, { backgroundColor: colors.border }]} />
+                    <View style={styles.tripStat}>
+                      <Text style={[styles.tripStatLabel, { color: colors.textTertiary }]}>{t('maxSpeed')}</Text>
+                      <Text style={[styles.tripStatValue, { color: colors.text }]}>{Math.round(trip.maxSpeedKmh)} <Text style={styles.unitSmall}>km/h</Text></Text>
+                    </View>
                   </View>
-                  <View style={[styles.tripStatDivider, { backgroundColor: colors.border }]} />
-                  <View style={styles.tripStat}>
-                    <Text style={[styles.tripStatLabel, { color: colors.textTertiary }]}>{t('avgSpeed')}</Text>
-                    <Text style={[styles.tripStatValue, { color: colors.text }]}>{Math.round(trip.avgSpeedKmh)} <Text style={styles.unitSmall}>km/h</Text></Text>
-                  </View>
-                  <View style={[styles.tripStatDivider, { backgroundColor: colors.border }]} />
-                  <View style={styles.tripStat}>
-                    <Text style={[styles.tripStatLabel, { color: colors.textTertiary }]}>{t('maxSpeed')}</Text>
-                    <Text style={[styles.tripStatValue, { color: colors.text }]}>{Math.round(trip.maxSpeedKmh)} <Text style={styles.unitSmall}>km/h</Text></Text>
-                  </View>
-                </View>
 
-                <View style={styles.tripFooter}>
-                  <View style={[styles.alarmSummary, { backgroundColor: trip.alarmCount > 0 ? colors.danger + '15' : colors.success + '15' }]}>
-                    <Ionicons
-                      name={trip.alarmCount > 0 ? "alert-circle" : "checkmark-circle"}
-                      size={16}
-                      color={trip.alarmCount > 0 ? colors.danger : colors.success}
-                    />
-                    <Text style={[styles.alarmSummaryText, { color: trip.alarmCount > 0 ? colors.danger : colors.success }]}>
-                      {trip.alarmCount === 0 ? t('safeDriving') : t('attentionAlarms').replace('{count}', trip.alarmCount)}
-                    </Text>
+                  <View style={styles.tripFooter}>
+                    <View style={[styles.alarmSummary, { backgroundColor: trip.alarmCount > 0 ? colors.danger + '15' : colors.success + '15' }]}>
+                      <Ionicons
+                        name={trip.alarmCount > 0 ? "alert-circle" : "checkmark-circle"}
+                        size={16}
+                        color={trip.alarmCount > 0 ? colors.danger : colors.success}
+                      />
+                      <Text style={[styles.alarmSummaryText, { color: trip.alarmCount > 0 ? colors.danger : colors.success }]}>
+                        {trip.alarmCount === 0 ? t('safeDriving') : t('attentionAlarms').replace('{count}', trip.alarmCount)}
+                      </Text>
+                    </View>
+                    <TouchableOpacity onPress={() => console.log('Trip detail for:', trip.id)}>
+                      <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
+                    </TouchableOpacity>
                   </View>
-                  <TouchableOpacity>
-                    <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
-                  </TouchableOpacity>
                 </View>
-              </View>
-            ))
+              ))}
+
+              {hasMoreTrips && (
+                <TouchableOpacity
+                  style={[styles.seeMoreBtn, { backgroundColor: colors.accentLight }]}
+                  onPress={() => setShowAllTrips(true)}
+                >
+                  <Text style={[styles.seeMoreText, { color: colors.accent }]}>Ver mais viagens</Text>
+                  <Ionicons name="chevron-down" size={16} color={colors.accent} />
+                </TouchableOpacity>
+              )}
+            </>
           )}
 
           {/* GLOBAL SUMMARY */}
@@ -561,5 +595,19 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginTop: 12,
     textAlign: 'center',
+  },
+  seeMoreBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 16,
+    gap: 8,
+    marginTop: 8,
+    marginBottom: 20,
+  },
+  seeMoreText: {
+    fontSize: 14,
+    fontWeight: '700',
   },
 });

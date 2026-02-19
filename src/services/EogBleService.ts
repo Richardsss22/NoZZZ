@@ -66,6 +66,7 @@ function atob_custom(input: string = '') {
 // =========================
 let countdownTimer: ReturnType<typeof setInterval> | null = null;
 let phaseTimeout: ReturnType<typeof setTimeout> | null = null;
+let rxBuffer = ''; // Buffer para acumular fragmentos de mensagens BLE
 
 function clearTimers() {
   if (countdownTimer) {
@@ -256,24 +257,28 @@ export const useEogBleStore = create<State>((set, get) => ({
         const valueB64 = c?.value;
         if (!valueB64) return;
 
-        let line = '';
-        try {
-          line = atob_custom(valueB64).trim();
-        } catch (err) {
-          console.log('[EOG] Decode error:', err);
-          return;
+        const chunk = atob_custom(valueB64);
+        if (!chunk) return;
+
+        rxBuffer += chunk;
+        if (rxBuffer.includes('\n')) {
+          const parts = rxBuffer.split('\n');
+          // O último elemento pode ser um fragmento incompleto (sem \n no fim)
+          rxBuffer = parts.pop() || '';
+
+          for (const line of parts) {
+            const trimmed = line.trim();
+            if (trimmed) {
+              if (trimmed === 'HEAD_DOWN_7S') {
+                console.log('[EOG] Head down >7.5s -> trigger alarm');
+                const { useEyeDetectionStore } = require('./EyeDetectionService');
+                useEyeDetectionStore.getState().triggerAlarm();
+              } else {
+                handleIncomingLine(trimmed);
+              }
+            }
+          }
         }
-
-        if (!line) return;
-
-        if (line === 'HEAD_DOWN_7S') {
-          console.log('[EOG] Head down >7.5s -> trigger alarm');
-          const { useEyeDetectionStore } = require('./EyeDetectionService');
-          useEyeDetectionStore.getState().triggerAlarm();
-          return;
-        }
-
-        handleIncomingLine(line);
       });
 
       set({
@@ -415,6 +420,7 @@ export const useEogBleStore = create<State>((set, get) => ({
       livePitch: null,
       history: [],
     });
+    rxBuffer = '';
   },
 
   pressMainButton: async () => {
