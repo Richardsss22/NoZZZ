@@ -37,7 +37,7 @@ export default function BluetoothConnectionModal({ visible, onClose }: Bluetooth
             style={[styles.deviceItem, { backgroundColor: colors.inputBg }]}
             onPress={() => {
                 connect(item.id);
-                // Optionally close modal on success, but for now let user see loading
+                onClose();
             }}
             disabled={isConnecting}
         >

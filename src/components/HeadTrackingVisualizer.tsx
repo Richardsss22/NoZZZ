@@ -2,18 +2,31 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Dimensions, Platform } from 'react-native';
 import Svg, { G, Path, Ellipse, Circle } from 'react-native-svg';
 import { useEogBleStore } from '../services/EogBleService';
+import { useBLEStore } from '../services/BLEService';
 import { useThemeStore, getTheme } from '../styles/theme';
 
 export default function HeadTrackingVisualizer() {
-    const { liveRoll, livePitch, device } = useEogBleStore();
+    const liveRoll = useEogBleStore(state => state.liveRoll);
+    const livePitch = useEogBleStore(state => state.livePitch);
+    const device = useEogBleStore(state => state.device);
+    const isTestMode = useEogBleStore(state => state.isTestMode);
+
+    const connectedDevice = useBLEStore(state => state.connectedDevice);
+    const gyroData = useBLEStore(state => state.gyroData);
+
     const { isDarkMode, accent } = useThemeStore();
     const colors = getTheme(isDarkMode, accent);
 
-    const isConnected = !!device;
+    const isConnected = !!device || !!connectedDevice || isTestMode;
 
-    // Real values from sensor
-    const headYaw = liveRoll || 0;
-    const headPitch = livePitch || 0;
+    // Merge data from both stores - prioritize Radar (gyroData) over EOG (liveRoll/livePitch)
+    const radarRoll = gyroData?.roll || 0;
+    const radarPitch = gyroData?.pitch || 0;
+    const eogRoll = liveRoll || 0;
+    const eogPitch = livePitch || 0;
+    const headYaw = radarRoll !== 0 ? radarRoll : eogRoll;
+    const headPitch = radarPitch !== 0 ? radarPitch : eogPitch;
+
     const targetYaw = React.useRef(0);
     const targetPitch = React.useRef(0);
 

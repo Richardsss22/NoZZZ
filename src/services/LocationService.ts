@@ -8,6 +8,7 @@ interface LocationState {
   isDriving: boolean;
   speed: number; // km/h
   location: Location.LocationObject | null;
+  heading: number; // For Compass
 
   // Dados da viagem atual
   currentTripId: string | null;
@@ -18,6 +19,8 @@ interface LocationState {
 
   startTracking: () => Promise<void>;
   stopTracking: () => void;
+  startHeadingWatch: () => Promise<void>;
+  stopHeadingWatch: () => void;
   incrementAlertCount: () => void;
   handleUpdate: (location: Location.LocationObject) => void;
 }
@@ -44,6 +47,8 @@ try {
 }
 
 let locationSubscription: Location.LocationSubscription | null = null;
+let headingSubscription: Location.LocationSubscription | null = null;
+let lastHeadingValue = 0;
 
 // variáveis auxiliares para evitar entrar/sair de “condução” a toda a hora
 let speedAboveThresholdSince: number | null = null;
@@ -79,6 +84,7 @@ export const useLocationStore = create<LocationState>((set, get) => ({
   isDriving: false,
   speed: 0,
   location: null,
+  heading: 0,
 
   currentTripId: null,
   tripStartTime: null,
@@ -117,6 +123,8 @@ export const useLocationStore = create<LocationState>((set, get) => ({
         notificationColor: "#2196F3"
       }
     });
+
+    await get().startHeadingWatch();
   },
 
   handleUpdate: (location) => {
@@ -295,6 +303,8 @@ export const useLocationStore = create<LocationState>((set, get) => ({
       locationSubscription = null;
     }
 
+    get().stopHeadingWatch();
+
     speedAboveThresholdSince = null;
     speedBelowThresholdSince = null;
 
@@ -307,6 +317,36 @@ export const useLocationStore = create<LocationState>((set, get) => ({
       maxSpeedThisTrip: 0,
       speed: 0,
     });
+  },
+
+  startHeadingWatch: async () => {
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== 'granted') return;
+
+    if (headingSubscription) return; // already watching
+
+    headingSubscription = await Location.watchHeadingAsync((data) => {
+      let newHeading = Math.round(data.trueHeading || data.magHeading);
+
+      // Smoothing alpha blending
+      const alpha = 0.2;
+      let diff = newHeading - lastHeadingValue;
+      if (diff > 180) diff -= 360;
+      if (diff < -180) diff += 360;
+
+      const smoothedHeading = lastHeadingValue + (diff * alpha);
+      lastHeadingValue = smoothedHeading;
+
+      const finalHeading = (Math.round(smoothedHeading) + 360) % 360;
+      useLocationStore.setState({ heading: finalHeading });
+    });
+  },
+
+  stopHeadingWatch: () => {
+    if (headingSubscription) {
+      headingSubscription.remove();
+      headingSubscription = null;
+    }
   },
 
   incrementAlertCount: () => {

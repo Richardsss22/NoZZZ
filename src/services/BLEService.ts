@@ -3,6 +3,22 @@ import { BleManager, Device, State } from 'react-native-ble-plx';
 import { requestBLEPermissions } from './BLEPermissionService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+// Base64 helper (atob may not exist in React Native)
+const b64chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
+function atob_custom(input: string = '') {
+    const str = input.replace(/=+$/, '');
+    let output = '';
+    if (str.length % 4 === 1) return '';
+    let bc = 0, bs = 0, buffer = 0, i = 0;
+    while (i < str.length) {
+        buffer = b64chars.indexOf(str.charAt(i++));
+        if (buffer === -1) continue;
+        bs = bc % 4 ? bs * 64 + buffer : buffer;
+        if (bc++ % 4) output += String.fromCharCode(255 & (bs >> ((-2 * bc) & 6)));
+    }
+    return output;
+}
+
 // Configuration
 const CONFIG = {
     SERVICE_UUID: '4fafc201-1fb5-459e-8fcc-c5c9c331914b',
@@ -53,6 +69,7 @@ interface BLEState {
 
 let bleManager: BleManager | null = null;
 let reconnectTimeout: NodeJS.Timeout | null = null;
+let gyroBuffer = ''; // Buffer to accumulate fragmented BLE packets
 
 export const useBLEStore = create<BLEState>((set, get) => ({
     isConnected: false,
@@ -171,6 +188,15 @@ export const useBLEStore = create<BLEState>((set, get) => ({
             });
 
             console.log(`✅ Connected to: ${device.name}`);
+
+            // Negotiate larger MTU to receive full JSON payloads (default BLE MTU is 20 bytes)
+            try {
+                await device.requestMTU(185);
+                console.log('📏 MTU negotiated successfully');
+            } catch (mtuErr) {
+                console.log('⚠️ MTU negotiation failed (using default)');
+            }
+
             await device.discoverAllServicesAndCharacteristics();
 
             set({
@@ -180,6 +206,8 @@ export const useBLEStore = create<BLEState>((set, get) => ({
                 connectedDevice: device,
                 error: null
             });
+
+            gyroBuffer = ''; // Reset buffer
 
             // Subscribe to gyro
             device.monitorCharacteristicForService(
@@ -192,17 +220,36 @@ export const useBLEStore = create<BLEState>((set, get) => ({
                     }
                     if (characteristic?.value) {
                         try {
-                            const data = atob(characteristic.value);
-                            const gyroData = JSON.parse(data);
-                            set({
-                                gyroData: {
-                                    pitch: gyroData.pitch || 0,
-                                    roll: gyroData.roll || 0,
-                                    yaw: gyroData.yaw || 0,
-                                }
-                            });
+                            const decoded = atob_custom(characteristic.value);
+                            gyroBuffer += decoded;
+
+                            // Extract complete JSON objects from buffer
+                            let openIdx = gyroBuffer.indexOf('{');
+                            let closeIdx = gyroBuffer.indexOf('}');
+
+                            while (openIdx !== -1 && closeIdx !== -1 && closeIdx > openIdx) {
+                                const jsonStr = gyroBuffer.substring(openIdx, closeIdx + 1);
+                                gyroBuffer = gyroBuffer.substring(closeIdx + 1);
+
+                                try {
+                                    const gyroData = JSON.parse(jsonStr);
+                                    set({
+                                        gyroData: {
+                                            pitch: gyroData.pitch || 0,
+                                            roll: gyroData.roll || 0,
+                                            yaw: gyroData.yaw || 0,
+                                        }
+                                    });
+                                } catch (_e) { /* skip malformed fragment */ }
+
+                                openIdx = gyroBuffer.indexOf('{');
+                                closeIdx = gyroBuffer.indexOf('}');
+                            }
+
+                            // Prevent buffer overflow
+                            if (gyroBuffer.length > 500) gyroBuffer = '';
                         } catch (e) {
-                            console.error('❌ Parse error:', e);
+                            console.error('❌ Decode error:', e);
                         }
                     }
                 }
@@ -267,6 +314,15 @@ export const useBLEStore = create<BLEState>((set, get) => ({
                 console.log(`🔌 Disconnecting: ${connectedDevice.name}`);
                 bleManager?.cancelDeviceConnection(connectedDevice.id);
             }
+
+            // Ensure EOG service also detaches
+            try {
+                const { useEogBleStore } = require('./EogBleService');
+                useEogBleStore.getState().detach();
+            } catch (e) {
+                console.log('EOG detach skip', e);
+            }
+
             set({
                 isConnected: false,
                 isConnecting: false,

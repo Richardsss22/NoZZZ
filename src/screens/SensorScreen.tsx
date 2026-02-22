@@ -16,19 +16,18 @@ import Compass from '../components/Compass';
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
 export default function SensorScreen() {
-    const { connectedDevice } = useBLEStore();
-    const {
-        device,
-        phase,
-        statusText,
-        lastMinuteLabel,
-        lastNormal,
-        lastSlow,
-        lastFlag,
-        history,
-        isTestMode,
-        setIsTestMode,
-    } = useEogBleStore();
+    const connectedDevice = useBLEStore(state => state.connectedDevice);
+
+    const device = useEogBleStore(state => state.device);
+    const phase = useEogBleStore(state => state.phase);
+    const statusText = useEogBleStore(state => state.statusText);
+    const lastMinuteLabel = useEogBleStore(state => state.lastMinuteLabel);
+    const lastNormal = useEogBleStore(state => state.lastNormal);
+    const lastSlow = useEogBleStore(state => state.lastSlow);
+    const lastFlag = useEogBleStore(state => state.lastFlag);
+    const history = useEogBleStore(state => state.history);
+    const isTestMode = useEogBleStore(state => state.isTestMode);
+    const setIsTestMode = useEogBleStore(state => state.setIsTestMode);
 
     const { isDarkMode, accent } = useThemeStore();
     const { t, language } = useI18nStore();

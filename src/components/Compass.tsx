@@ -1,59 +1,25 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Platform } from 'react-native';
-import * as Location from 'expo-location';
 import Svg, { G, Path, Rect } from 'react-native-svg';
 import { useThemeStore, getTheme } from '../styles/theme';
-import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming, useDerivedValue } from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
+import { useLocationStore } from '../services/LocationService';
 
 export default function Compass() {
-    const [displayHeading, setDisplayHeading] = useState(0);
     const { isDarkMode, accent } = useThemeStore();
     const colors = getTheme(isDarkMode, accent);
+    const { heading } = useLocationStore();
 
     // Smooth rotation using Reanimated
     const rotation = useSharedValue(0);
-    const lastHeading = useRef(0);
 
     useEffect(() => {
-        let subscription: Location.LocationSubscription | null = null;
-
-        const startWatching = async () => {
-            const { status } = await Location.requestForegroundPermissionsAsync();
-            if (status !== 'granted') {
-                console.warn('Permission to access location was denied for compass');
-                return;
-            }
-
-            subscription = await Location.watchHeadingAsync((data) => {
-                let newHeading = Math.round(data.trueHeading || data.magHeading);
-
-                // Low-pass filter (smoothing) - simple alpha blending
-                // weight: 0.1 for new, 0.9 for old to make it very smooth
-                const alpha = 0.2;
-
-                // Handle 359 -> 0 crossing for smoothing
-                let diff = newHeading - lastHeading.current;
-                if (diff > 180) diff -= 360;
-                if (diff < -180) diff += 360;
-
-                const smoothedHeading = lastHeading.current + (diff * alpha);
-                lastHeading.current = smoothedHeading;
-
-                const finalHeading = (Math.round(smoothedHeading) + 360) % 360;
-
-                setDisplayHeading(finalHeading);
-                // Update reanimated value with spring for fluid look
-                rotation.value = withSpring(-smoothedHeading, {
-                    damping: 20,
-                    stiffness: 90,
-                    mass: 1,
-                });
-            });
-        };
-
-        startWatching();
-        return () => subscription?.remove();
-    }, []);
+        rotation.value = withSpring(-heading, {
+            damping: 20,
+            stiffness: 90,
+            mass: 1,
+        });
+    }, [heading]);
 
     const animatedStyle = useAnimatedStyle(() => ({
         transform: [{ rotate: `${rotation.value}deg` }],
@@ -116,11 +82,11 @@ export default function Compass() {
             {/* STATUS DISPLAY - Moved Below */}
             <View style={styles.infoBox}>
                 <Text style={[styles.directionText, { color: colors.accent }]}>
-                    {getDirectionText(displayHeading)}
+                    {getDirectionText(heading)}
                 </Text>
                 <View style={[styles.divider, { backgroundColor: colors.border }]} />
                 <Text style={[styles.degreeText, { color: colors.text }]}>
-                    {String(displayHeading).padStart(3, '0')}°
+                    {String(heading).padStart(3, '0')}°
                 </Text>
             </View>
         </View>

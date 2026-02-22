@@ -26,10 +26,14 @@ import BluetoothConnectionModal from '../components/BluetoothConnectionModal';
 import Compass from '../components/Compass';
 
 export default function DashboardScreen({ navigation }: any) {
-    const { isConnected, isScanning, startScanning, disconnect, gyroData, batteryLevel } = useBLEStore();
+    const isConnected = useBLEStore(state => state.isConnected);
+    const isScanning = useBLEStore(state => state.isScanning);
+    const startScanning = useBLEStore(state => state.startScanning);
+    const disconnect = useBLEStore(state => state.disconnect);
+    const batteryLevel = useBLEStore(state => state.batteryLevel);
+
     const { isDriving, speed, startTracking, stopTracking } = useLocationStore();
     const { isDrowsy, resetAlert, countdown } = useDrowsinessStore();
-    const { livePitch: eogPitch } = useEogBleStore();
     const {
         alarmPlaying,
         stopAlarm: stopEyeAlarm,
@@ -282,11 +286,11 @@ export default function DashboardScreen({ navigation }: any) {
                         </View>
                         <TouchableOpacity
                             style={[styles.secondaryBtn, { backgroundColor: colors.accentLight }]}
-                            onPress={() => setModalVisible(true)}
+                            onPress={() => isConnected ? disconnect() : setModalVisible(true)}
                         >
-                            <Ionicons name="link" size={18} color={colors.accentDark} />
+                            <Ionicons name={isConnected ? "close-circle" : "link"} size={18} color={colors.accentDark} />
                             <Text style={[styles.secondaryBtnText, { color: colors.accentDark }]}>
-                                {isConnected ? 'Gerir Conexão' : 'Conectar Óculos'}
+                                {isConnected ? 'Desconectar' : 'Conectar Óculos'}
                             </Text>
                         </TouchableOpacity>
                     </View>

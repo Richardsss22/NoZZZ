@@ -125,7 +125,7 @@ export const translations = {
         smartGlasses: 'Óculos Inteligentes',
         searchingDevices: 'A procurar dispositivos...',
         unknownDevice: 'Desconhecido',
-        aboutGlasses: 'Sobre o Oculus',
+        aboutGlasses: 'Sobre o NoZZZ',
         lookAtCamera: 'Olhe para a câmara',
         measuringAperture: 'A medir abertura normal...',
         biometricFeedback: 'Feedback Biométrico',
