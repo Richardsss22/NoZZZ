@@ -1,14 +1,26 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, Platform } from 'react-native';
 import Svg, { G, Path, Rect } from 'react-native-svg';
 import { useThemeStore, getTheme } from '../styles/theme';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
 import { useLocationStore } from '../services/LocationService';
+import { useFocusEffect } from '@react-navigation/native';
 
 export default function Compass() {
     const { isDarkMode, accent } = useThemeStore();
     const colors = getTheme(isDarkMode, accent);
     const { heading } = useLocationStore();
+
+    // Iniciar bussola quando o ecrã está focado
+    useFocusEffect(
+        useCallback(() => {
+            const store = useLocationStore.getState();
+            store.startHeadingWatch();
+            return () => {
+                store.stopHeadingWatch();
+            };
+        }, [])
+    );
 
     // Smooth rotation using Reanimated
     const rotation = useSharedValue(0);

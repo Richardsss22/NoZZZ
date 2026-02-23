@@ -46,6 +46,7 @@ interface BLEState {
     isConnected: boolean;
     isScanning: boolean;
     isConnecting: boolean;
+    intentionalDisconnect: boolean;
     connectingDeviceId: string | null;
     connectedDevice: Device | null;
     scannedDevices: ScannedDevice[];
@@ -75,6 +76,7 @@ export const useBLEStore = create<BLEState>((set, get) => ({
     isConnected: false,
     isScanning: false,
     isConnecting: false,
+    intentionalDisconnect: false,
     connectingDeviceId: null,
     connectedDevice: null,
     scannedDevices: [],
@@ -179,7 +181,7 @@ export const useBLEStore = create<BLEState>((set, get) => ({
             get().stopScanning();
 
             console.log(`🔗 Connecting to: ${deviceId}...`);
-            set({ isConnecting: true, connectingDeviceId: deviceId, error: null });
+            set({ isConnecting: true, intentionalDisconnect: false, connectingDeviceId: deviceId, error: null });
 
             if (!bleManager) throw new Error('BLE Manager not initialized');
 
@@ -271,8 +273,8 @@ export const useBLEStore = create<BLEState>((set, get) => ({
             const rssiInterval = setInterval(async () => {
                 if (get().isConnected && device) {
                     try {
-                        const rssi = await device.readRSSI();
-                        set({ rssi });
+                        const updatedDevice = await device.readRSSI();
+                        set({ rssi: updatedDevice.rssi || 0 });
                     } catch (e) { }
                 } else {
                     clearInterval(rssiInterval);
@@ -282,13 +284,17 @@ export const useBLEStore = create<BLEState>((set, get) => ({
             // Handle disconnect
             device.onDisconnected((error) => {
                 console.log('🔌 Disconnected');
+                const wasIntentional = get().intentionalDisconnect;
                 set({ isConnected: false, connectedDevice: null });
 
-                if (CONFIG.AUTO_RECONNECT && !error) {
+                // Se houver erro, ou se o utilizador NÃO pediu para desconectar: Tenta reconectar
+                if (CONFIG.AUTO_RECONNECT && !wasIntentional) {
                     console.log(`⏳ Reconnecting in ${CONFIG.RECONNECT_DELAY_MS / 1000}s...`);
                     reconnectTimeout = setTimeout(() => {
                         get().connect(deviceId);
                     }, CONFIG.RECONNECT_DELAY_MS);
+                } else if (wasIntentional) {
+                    console.log('🛑 Intentional disconnect, disabling auto-reconnect for this session.');
                 }
             });
 
@@ -305,6 +311,7 @@ export const useBLEStore = create<BLEState>((set, get) => ({
 
     disconnect: () => {
         try {
+            set({ intentionalDisconnect: true });
             const { connectedDevice } = get();
             if (reconnectTimeout) {
                 clearTimeout(reconnectTimeout);
