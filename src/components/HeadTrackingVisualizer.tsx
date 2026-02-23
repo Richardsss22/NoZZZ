@@ -10,6 +10,7 @@ export default function HeadTrackingVisualizer() {
     const livePitch = useEogBleStore(state => state.livePitch);
     const device = useEogBleStore(state => state.device);
     const isTestMode = useEogBleStore(state => state.isTestMode);
+    const isBlinking = useEogBleStore(state => state.isBlinking);
 
     const connectedDevice = useBLEStore(state => state.connectedDevice);
     const gyroData = useBLEStore(state => state.gyroData);
@@ -68,6 +69,9 @@ export default function HeadTrackingVisualizer() {
         // Olhos 3D
         const leftEyeScaleX = yawFactor < 0 ? 1 - (Math.abs(yawFactor) * 0.6) : 1 - (Math.abs(yawFactor) * 0.1);
         const rightEyeScaleX = yawFactor > 0 ? 1 - (Math.abs(yawFactor) * 0.6) : 1 - (Math.abs(yawFactor) * 0.1);
+
+        // --- LÓGICA ANATÓMICA DO PISCAR ---
+        const eyelidPath = isBlinking ? "M-11,2 Q0,3 11,2" : "M-11,0 Q0,-4 11,0";
 
         // Nariz 3D (1.3 fator)
         const noseTipX = faceX * 1.3;
@@ -144,18 +148,18 @@ export default function HeadTrackingVisualizer() {
                     {/* Linha Central */}
                     <Path d={`M0,-95 Q${centerlineCurve},0 ${faceX * 0.8},95`} stroke={svgAccent} strokeWidth="1.5" strokeDasharray="3 3" opacity={0.4} fill="none" />
 
-                    {/* Olhos */}
+                    {/* Olhos (Blink Support) */}
                     <G transform={`translate(${faceX - 25}, -10)`}>
                         <G transform={`scale(${leftEyeScaleX} 1)`}>
-                            <Path d="M-10,0 L10,0" stroke={svgAccent} strokeWidth="2.5" strokeLinecap="round" />
-                            <Circle cx="0" cy="0" r="3" fill={svgAccent} />
+                            <Path d={eyelidPath} stroke={svgAccent} strokeWidth="2.5" fill="none" strokeLinecap="round" />
+                            <Circle cx="0" cy="0.5" r="3" fill={svgAccent} opacity={isBlinking ? 0 : 1} scaleY={isBlinking ? 0.1 : 1} origin="0, 0.5" />
                         </G>
                     </G>
 
                     <G transform={`translate(${faceX + 25}, -10)`}>
                         <G transform={`scale(${rightEyeScaleX} 1)`}>
-                            <Path d="M-10,0 L10,0" stroke={svgAccent} strokeWidth="2.5" strokeLinecap="round" />
-                            <Circle cx="0" cy="0" r="3" fill={svgAccent} />
+                            <Path d={eyelidPath} stroke={svgAccent} strokeWidth="2.5" fill="none" strokeLinecap="round" />
+                            <Circle cx="0" cy="0.5" r="3" fill={svgAccent} opacity={isBlinking ? 0 : 1} scaleY={isBlinking ? 0.1 : 1} origin="0, 0.5" />
                         </G>
                     </G>
 

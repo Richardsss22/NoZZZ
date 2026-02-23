@@ -16,6 +16,7 @@ interface LocationState {
   lastLocation: Location.LocationObject | null;
   distanceKmThisTrip: number;
   maxSpeedThisTrip: number;
+  currentRoute: { latitude: number; longitude: number }[];
 
   startTracking: () => Promise<void>;
   stopTracking: () => void;
@@ -91,6 +92,7 @@ export const useLocationStore = create<LocationState>((set, get) => ({
   lastLocation: null,
   distanceKmThisTrip: 0,
   maxSpeedThisTrip: 0,
+  currentRoute: [],
 
   startTracking: async () => {
     // Tenta obter permissão de BACKGROUND, se falhar tenta Foreground
@@ -140,6 +142,7 @@ export const useLocationStore = create<LocationState>((set, get) => ({
       distanceKmThisTrip,
       maxSpeedThisTrip,
       lastLocation,
+      currentRoute,
     } = state;
 
     // 1) LÓGICA PARA COMEÇAR VIAGEM AUTOMÁTICA
@@ -171,6 +174,7 @@ export const useLocationStore = create<LocationState>((set, get) => ({
             distanceKmThisTrip = 0;
             maxSpeedThisTrip = 0;
             lastLocation = location;
+            currentRoute = [{ latitude: location.coords.latitude, longitude: location.coords.longitude }];
 
             // reset marcador
             speedAboveThresholdSince = null;
@@ -214,6 +218,7 @@ export const useLocationStore = create<LocationState>((set, get) => ({
             distanceKmThisTrip = 0;
             maxSpeedThisTrip = 0;
             lastLocation = location;
+            currentRoute = [];
 
             // reset marcador
             speedBelowThresholdSince = null;
@@ -257,6 +262,15 @@ export const useLocationStore = create<LocationState>((set, get) => ({
           maxSpeedKmh: maxSpeedThisTrip,
           avgSpeedKmh: avgSpeed,
           endTime: new Date().toISOString(), // vai sendo atualizado
+          route: currentRoute,
+        });
+      }
+
+      // Update route points (keep it under 5000 points max to not bloat memory)
+      if (currentRoute.length < 5000) {
+        currentRoute.push({
+          latitude: location.coords.latitude,
+          longitude: location.coords.longitude
         });
       }
     }
@@ -268,6 +282,7 @@ export const useLocationStore = create<LocationState>((set, get) => ({
       distanceKmThisTrip,
       maxSpeedThisTrip,
       lastLocation: location,
+      currentRoute,
       location,
       speed: speedKmh,
     }));
@@ -315,6 +330,7 @@ export const useLocationStore = create<LocationState>((set, get) => ({
       lastLocation: null,
       distanceKmThisTrip: 0,
       maxSpeedThisTrip: 0,
+      currentRoute: [],
       speed: 0,
     });
   },

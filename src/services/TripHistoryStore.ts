@@ -10,6 +10,7 @@ export interface TripSummary {
   avgSpeedKmh: number;
   maxSpeedKmh: number;
   alarmCount: number;
+  route?: { latitude: number; longitude: number }[]; // Optional for backwards compatibility
 }
 
 interface TripHistoryState {

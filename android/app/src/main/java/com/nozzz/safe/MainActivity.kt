@@ -2,8 +2,6 @@ package com.nozzz.safe
 
 import android.os.Build
 import android.os.Bundle
-import android.app.PictureInPictureParams // ADDED
-import android.util.Rational // ADDED
 
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
@@ -58,16 +56,6 @@ class MainActivity : ReactActivity() {
 
       // Use the default back button implementation on Android S
       // because it's doing more than [Activity.moveTaskToBack] in fact.
-      // Downloaded from https://developer.android.com/reference/android/app/Activity#onBackPressed()
       super.invokeDefaultOnBackPressed()
-  }
-
-  override fun onUserLeaveHint() {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-      val params = PictureInPictureParams.Builder()
-        .setAspectRatio(Rational(3, 4))
-        .build()
-      enterPictureInPictureMode(params)
-    }
   }
 }

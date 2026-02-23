@@ -9,6 +9,7 @@ import {
   Platform,
   TouchableOpacity,
   Dimensions,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useThemeStore, getTheme } from '../styles/theme';
@@ -17,6 +18,7 @@ import { useTripHistoryStore } from '../services/TripHistoryStore';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import AmbientBackground from '../components/AmbientBackground';
+import MapView, { Polyline } from 'react-native-maps';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
@@ -25,6 +27,7 @@ export default function HistoryScreen({ navigation }: any) {
   const colors = getTheme(isDarkMode, accent);
   const { t, language } = useI18nStore();
   const [showAllTrips, setShowAllTrips] = useState(false);
+  const [selectedTrip, setSelectedTrip] = useState<any>(null);
 
   const rawTrips = useTripHistoryStore((state: any) => state.trips);
 
@@ -320,7 +323,7 @@ export default function HistoryScreen({ navigation }: any) {
                         {trip.alarmCount === 0 ? t('safeDriving') : t('attentionAlarms').replace('{count}', trip.alarmCount)}
                       </Text>
                     </View>
-                    <TouchableOpacity onPress={() => console.log('Trip detail for:', trip.id)}>
+                    <TouchableOpacity onPress={() => setSelectedTrip(trip)}>
                       <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
                     </TouchableOpacity>
                   </View>
@@ -356,6 +359,93 @@ export default function HistoryScreen({ navigation }: any) {
 
           <View style={{ height: 100 }} />
         </ScrollView>
+
+        {/* TRIP DETAILS MODAL */}
+        <Modal visible={!!selectedTrip} transparent animationType="slide">
+          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
+            {selectedTrip && (
+              <View style={[styles.premiumCard, { backgroundColor: colors.card, borderColor: colors.border, margin: 20, marginBottom: 40 }]}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                  <Text style={{ fontSize: 18, fontWeight: '800', color: colors.text }}>Detalhes da Viagem</Text>
+                  <TouchableOpacity onPress={() => setSelectedTrip(null)}>
+                    <Ionicons name="close-circle" size={28} color={colors.textTertiary} />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Date & Time */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 15 }}>
+                  <Ionicons name="calendar-outline" size={20} color={colors.accent} style={{ marginRight: 10 }} />
+                  <View>
+                    <Text style={{ fontSize: 14, fontWeight: '700', color: colors.text }}>{formatDateLabel(selectedTrip.startTime)}</Text>
+                    <Text style={{ fontSize: 12, color: colors.textSecondary }}>{formatTimeRange(selectedTrip.startTime, selectedTrip.endTime)}</Text>
+                  </View>
+                </View>
+
+                {/* Map View */}
+                {selectedTrip.route && selectedTrip.route.length > 1 && (
+                  <View style={{ height: 160, borderRadius: 16, overflow: 'hidden', marginBottom: 15, borderWidth: 1, borderColor: colors.border }}>
+                    <MapView
+                      style={{ flex: 1 }}
+                      initialRegion={{
+                        latitude: selectedTrip.route[Math.floor(selectedTrip.route.length / 2)].latitude,
+                        longitude: selectedTrip.route[Math.floor(selectedTrip.route.length / 2)].longitude,
+                        latitudeDelta: 0.05,
+                        longitudeDelta: 0.05,
+                      }}
+                      scrollEnabled={false}
+                      zoomEnabled={false}
+                      pitchEnabled={false}
+                      rotateEnabled={false}
+                    >
+                      <Polyline
+                        coordinates={selectedTrip.route}
+                        strokeColor={colors.accent}
+                        strokeWidth={4}
+                      />
+                    </MapView>
+                  </View>
+                )}
+
+                {/* Duration & Distance */}
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 15, padding: 15, backgroundColor: colors.elevated, borderRadius: 16 }}>
+                  <View>
+                    <Text style={{ fontSize: 12, color: colors.textTertiary, fontWeight: '700', marginBottom: 4 }}>Duração</Text>
+                    <Text style={{ fontSize: 16, fontWeight: '800', color: colors.text }}>{formatDuration(selectedTrip.startTime, selectedTrip.endTime)}</Text>
+                  </View>
+                  <View>
+                    <Text style={{ fontSize: 12, color: colors.textTertiary, fontWeight: '700', marginBottom: 4 }}>Distância</Text>
+                    <Text style={{ fontSize: 16, fontWeight: '800', color: colors.text }}>{selectedTrip.distanceKm.toFixed(1)} km</Text>
+                  </View>
+                </View>
+
+                {/* Speeds */}
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 15, padding: 15, backgroundColor: colors.elevated, borderRadius: 16 }}>
+                  <View>
+                    <Text style={{ fontSize: 12, color: colors.textTertiary, fontWeight: '700', marginBottom: 4 }}>Vel. Média</Text>
+                    <Text style={{ fontSize: 16, fontWeight: '800', color: colors.text }}>{Math.round(selectedTrip.avgSpeedKmh)} km/h</Text>
+                  </View>
+                  <View>
+                    <Text style={{ fontSize: 12, color: colors.textTertiary, fontWeight: '700', marginBottom: 4 }}>Vel. Máxima</Text>
+                    <Text style={{ fontSize: 16, fontWeight: '800', color: colors.text }}>{Math.round(selectedTrip.maxSpeedKmh)} km/h</Text>
+                  </View>
+                </View>
+
+                {/* Alarms */}
+                <View style={[styles.alarmSummary, { backgroundColor: selectedTrip.alarmCount > 0 ? colors.danger + '15' : colors.success + '15', alignSelf: 'stretch', padding: 15 }]}>
+                  <Ionicons
+                    name={selectedTrip.alarmCount > 0 ? "alert-circle" : "checkmark-circle"}
+                    size={20}
+                    color={selectedTrip.alarmCount > 0 ? colors.danger : colors.success}
+                  />
+                  <Text style={[styles.alarmSummaryText, { color: selectedTrip.alarmCount > 0 ? colors.danger : colors.success, fontSize: 14, marginLeft: 10 }]}>
+                    {selectedTrip.alarmCount === 0 ? t('safeDriving') : t('attentionAlarms').replace('{count}', selectedTrip.alarmCount)}
+                  </Text>
+                </View>
+
+              </View>
+            )}
+          </View>
+        </Modal>
       </SafeAreaView>
     </AmbientBackground>
   );

@@ -104,6 +104,7 @@ interface State {
   liveEog: number | null;
   liveRoll: number | null;
   livePitch: number | null;
+  isBlinking: boolean;
 
   sendEmailReport: () => void;
   attachToDevice: (device: Device) => Promise<void>;
@@ -138,6 +139,7 @@ export const useEogBleStore = create<State>((set, get) => ({
   liveEog: null,
   liveRoll: null,
   livePitch: null,
+  isBlinking: false,
   history: [],
   isTestMode: false,
 
@@ -162,6 +164,7 @@ export const useEogBleStore = create<State>((set, get) => ({
           set({
             liveRoll: Math.sin(time * 0.5) * 45,
             livePitch: Math.cos(time * 0.7) * 30,
+            isBlinking: Math.random() < 0.05,
           });
         } else if (elapsed < 16) {
           // Phase 2: Head tilting down (Simulating head drop)
@@ -350,11 +353,22 @@ export const useEogBleStore = create<State>((set, get) => ({
             const pitch = Number(arr?.[4] ?? NaN);
 
             if ([t, eog, roll, pitch].every(Number.isFinite)) {
-              set({
-                liveTs: t,
-                liveEog: eog,
-                liveRoll: roll,
-                livePitch: pitch,
+              set(state => {
+                let blinking = state.isBlinking;
+                // Detect peak > 150 as a blink
+                if (Math.abs(eog) > 150 && !blinking) {
+                  blinking = true;
+                  setTimeout(() => {
+                    useEogBleStore.setState({ isBlinking: false });
+                  }, 150);
+                }
+                return {
+                  liveTs: t,
+                  liveEog: eog,
+                  liveRoll: roll,
+                  livePitch: pitch,
+                  isBlinking: blinking,
+                };
               });
             }
             return;
@@ -418,6 +432,7 @@ export const useEogBleStore = create<State>((set, get) => ({
       liveEog: null,
       liveRoll: null,
       livePitch: null,
+      isBlinking: false,
       history: [],
     });
     rxBuffer = '';
