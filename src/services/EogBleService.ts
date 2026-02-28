@@ -235,6 +235,14 @@ export const useEogBleStore = create<State>((set, get) => ({
 
       await device.discoverAllServicesAndCharacteristics();
 
+      try {
+        // Negociar MTU maior para os arrays RT que contêm EOG + Acelerómetro
+        await device.requestMTU(185);
+        console.log('[EOG] MTU negotiated to 185');
+      } catch (e) {
+        console.log('[EOG] MTU negotiation failed (using default)');
+      }
+
       // Forma mais robusta de obter chars por serviço
       const charsForService = await device.characteristicsForService(SERVICE_UUID);
       const rx = charsForService.find(c => c.uuid.toLowerCase() === RX_UUID.toLowerCase()) || null;
@@ -314,7 +322,7 @@ export const useEogBleStore = create<State>((set, get) => ({
       console.log('[EOG] RX:', line);
 
       // 1) Mensagens finais de calibração
-      if (/mal.*efetuada/i.test(line) || /tente\s*novamente/i.test(line)) {
+      if (/mal.*efetuada/i.test(line) || /tente\s*novamente/i.test(line) || /fail/i.test(line) || /error/i.test(line)) {
         clearTimers();
         set({
           phase: 'idle',
@@ -325,7 +333,7 @@ export const useEogBleStore = create<State>((set, get) => ({
         return;
       }
 
-      if (/conclu/i.test(line) || /sucesso/i.test(line)) {
+      if (/conclu/i.test(line) || /sucesso/i.test(line) || /complete/i.test(line) || /done/i.test(line) || /finish/i.test(line)) {
         clearTimers();
         set({
           phase: 'ready_blink',
@@ -478,6 +486,20 @@ export const useEogBleStore = create<State>((set, get) => ({
                 countdownSec: null,
                 statusText: 'A processar…',
               });
+
+              // Failsafe: if we don't receive "Calibração concluída" from hardware within 4s, proceed anyway
+              phaseTimeout = setTimeout(() => {
+                const { phase } = get();
+                if (phase === 'calibrating') {
+                  clearTimers();
+                  set({
+                    phase: 'ready_blink',
+                    buttonLabel: 'Pisque',
+                    countdownSec: null,
+                    statusText: 'Calibração concluída',
+                  });
+                }
+              }, 4000);
             }
           }, 1000);
         }

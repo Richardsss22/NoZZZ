@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, Dimensions, Platform } from 'react-native';
 import Svg, { G, Path, Ellipse, Circle } from 'react-native-svg';
 import { useEogBleStore } from '../services/EogBleService';
 import { useBLEStore } from '../services/BLEService';
+import { useEyeDetectionStore } from '../services/EyeDetectionService';
 import { useThemeStore, getTheme } from '../styles/theme';
 
 export default function HeadTrackingVisualizer() {
@@ -10,6 +11,8 @@ export default function HeadTrackingVisualizer() {
     const livePitch = useEogBleStore(state => state.livePitch);
     const device = useEogBleStore(state => state.device);
     const isTestMode = useEogBleStore(state => state.isTestMode);
+    const alarmPlaying = useEyeDetectionStore(state => state.alarmPlaying);
+
 
     const connectedDevice = useBLEStore(state => state.connectedDevice);
     const gyroData = useBLEStore(state => state.gyroData);
@@ -40,6 +43,20 @@ export default function HeadTrackingVisualizer() {
     const [smoothYaw, setSmoothYaw] = useState(0);
     const [smoothPitch, setSmoothPitch] = useState(0);
 
+    // Simulador de pestanejar
+    const [isBlinking, setIsBlinking] = useState(false);
+    useEffect(() => {
+        const blinkInterval = setInterval(() => {
+            if (Math.random() > 0.6) {
+                setIsBlinking(true);
+                setTimeout(() => setIsBlinking(false), 150);
+            }
+        }, 3000);
+        return () => clearInterval(blinkInterval);
+    }, []);
+
+    const pitchWarningStartTime = React.useRef<number | null>(null);
+
     useEffect(() => {
         const interval = setInterval(() => {
             setSmoothYaw(prev => {
@@ -52,6 +69,21 @@ export default function HeadTrackingVisualizer() {
                 if (Math.abs(diff) < 0.05) return targetPitch.current;
                 return prev + diff * 0.22;
             });
+
+            // Pitch Alarm Logic: Trigger if head pitches down < -20 degrees for 7.5 seconds
+            if (targetPitch.current < -20) {
+                if (pitchWarningStartTime.current === null) {
+                    pitchWarningStartTime.current = Date.now();
+                } else if (Date.now() - pitchWarningStartTime.current >= 7500) {
+                    const isPlaying = useEyeDetectionStore.getState().alarmPlaying;
+                    if (!isPlaying) {
+                        console.log('[HeadTracking] Pitch < -20 detected for 7.5s, triggering alarm!');
+                        useEyeDetectionStore.getState().triggerAlarm();
+                    }
+                }
+            } else {
+                pitchWarningStartTime.current = null; // Reset when head is raised
+            }
         }, 16);
         return () => clearInterval(interval);
     }, []);
@@ -68,6 +100,9 @@ export default function HeadTrackingVisualizer() {
         // Olhos 3D
         const leftEyeScaleX = yawFactor < 0 ? 1 - (Math.abs(yawFactor) * 0.6) : 1 - (Math.abs(yawFactor) * 0.1);
         const rightEyeScaleX = yawFactor > 0 ? 1 - (Math.abs(yawFactor) * 0.6) : 1 - (Math.abs(yawFactor) * 0.1);
+
+        // --- LÓGICA ANATÓMICA DO PISCAR ---
+        const eyelidPath = isBlinking ? "M-11,2 Q0,3 11,2" : "M-11,0 Q0,-4 11,0";
 
         // Nariz 3D (1.3 fator)
         const noseTipX = faceX * 1.3;
@@ -94,6 +129,12 @@ export default function HeadTrackingVisualizer() {
         const svgAccent = colors.accent;
         const svgFill = colors.card;
         const svgFillAccent = colors.accentLight;
+        const alarmColor = colors.danger || '#FF4444';
+
+        // Alarm shake and glow
+        const eyeColor = alarmPlaying ? alarmColor : svgAccent;
+        const headStroke = alarmPlaying ? alarmColor : svgStroke;
+        const headStrokeWidth = alarmPlaying ? 3.5 : 2.5;
 
         return (
             <Svg width="200" height="240" viewBox="-100 -120 200 240">
@@ -128,8 +169,8 @@ export default function HeadTrackingVisualizer() {
                 {/* Crânio Base */}
                 <Ellipse
                     cx="0" cy="0" rx="80" ry="95"
-                    stroke={svgStroke}
-                    strokeWidth="2.5"
+                    stroke={headStroke}
+                    strokeWidth={headStrokeWidth}
                     fill={svgFill}
                 />
 
@@ -144,18 +185,18 @@ export default function HeadTrackingVisualizer() {
                     {/* Linha Central */}
                     <Path d={`M0,-95 Q${centerlineCurve},0 ${faceX * 0.8},95`} stroke={svgAccent} strokeWidth="1.5" strokeDasharray="3 3" opacity={0.4} fill="none" />
 
-                    {/* Olhos */}
+                    {/* Olhos (Blink Support) */}
                     <G transform={`translate(${faceX - 25}, -10)`}>
                         <G transform={`scale(${leftEyeScaleX} 1)`}>
-                            <Path d="M-10,0 L10,0" stroke={svgAccent} strokeWidth="2.5" strokeLinecap="round" />
-                            <Circle cx="0" cy="0" r="3" fill={svgAccent} />
+                            <Path d={eyelidPath} stroke={eyeColor} strokeWidth="2.5" fill="none" strokeLinecap="round" />
+                            <Circle cx="0" cy="0.5" r="3" fill={eyeColor} opacity={isBlinking ? 0 : 1} scaleY={isBlinking ? 0.1 : 1} origin="0, 0.5" />
                         </G>
                     </G>
 
                     <G transform={`translate(${faceX + 25}, -10)`}>
                         <G transform={`scale(${rightEyeScaleX} 1)`}>
-                            <Path d="M-10,0 L10,0" stroke={svgAccent} strokeWidth="2.5" strokeLinecap="round" />
-                            <Circle cx="0" cy="0" r="3" fill={svgAccent} />
+                            <Path d={eyelidPath} stroke={eyeColor} strokeWidth="2.5" fill="none" strokeLinecap="round" />
+                            <Circle cx="0" cy="0.5" r="3" fill={eyeColor} opacity={isBlinking ? 0 : 1} scaleY={isBlinking ? 0.1 : 1} origin="0, 0.5" />
                         </G>
                     </G>
 
@@ -185,12 +226,20 @@ export default function HeadTrackingVisualizer() {
 
                     {/* BOCA 3D */}
                     <Path
-                        d={`M${faceX - mouthW_Left},50 Q${faceX},60 ${faceX + mouthW_Right},50`}
-                        stroke={svgAccent}
+                        d={`M${faceX - mouthW_Left},50 Q${faceX},${alarmPlaying ? 65 : 60} ${faceX + mouthW_Right},50`}
+                        stroke={alarmPlaying ? alarmColor : svgAccent}
                         strokeWidth="2.5"
                         fill="none"
                         strokeLinecap="round"
                     />
+
+                    {/* Alerta Visual (Sinal de Exclamação quando o alarme toca) */}
+                    {alarmPlaying && (
+                        <G transform={`translate(${faceX}, -60)`}>
+                            <Path d="M-5,0 L5,0 L2,30 L-2,30 Z" fill={alarmColor} />
+                            <Circle cx="0" cy="40" r="4" fill={alarmColor} />
+                        </G>
+                    )}
                 </G>
             </Svg>
         );
