@@ -56,6 +56,7 @@ export default function HeadTrackingVisualizer() {
     }, []);
 
     const pitchWarningStartTime = React.useRef<number | null>(null);
+    const pitchAlarmTriggered = React.useRef<boolean>(false);
 
     useEffect(() => {
         const interval = setInterval(() => {
@@ -74,15 +75,18 @@ export default function HeadTrackingVisualizer() {
             if (targetPitch.current < -20) {
                 if (pitchWarningStartTime.current === null) {
                     pitchWarningStartTime.current = Date.now();
-                } else if (Date.now() - pitchWarningStartTime.current >= 7500) {
+                    pitchAlarmTriggered.current = false;
+                } else if (!pitchAlarmTriggered.current && Date.now() - pitchWarningStartTime.current >= 7500) {
                     const isPlaying = useEyeDetectionStore.getState().alarmPlaying;
                     if (!isPlaying) {
                         console.log('[HeadTracking] Pitch < -20 detected for 7.5s, triggering alarm!');
                         useEyeDetectionStore.getState().triggerAlarm();
+                        pitchAlarmTriggered.current = true;
                     }
                 }
             } else {
                 pitchWarningStartTime.current = null; // Reset when head is raised
+                pitchAlarmTriggered.current = false;
             }
         }, 16);
         return () => clearInterval(interval);
