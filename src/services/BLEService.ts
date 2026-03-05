@@ -71,6 +71,7 @@ interface BLEState {
 let bleManager: BleManager | null = null;
 let reconnectTimeout: NodeJS.Timeout | null = null;
 let gyroBuffer = ''; // Buffer to accumulate fragmented BLE packets
+let isIntentionalDisconnect = false; // Flag to prevent auto-reconnect on manual disconnect
 
 export const useBLEStore = create<BLEState>((set, get) => ({
     isConnected: false,
@@ -181,6 +182,7 @@ export const useBLEStore = create<BLEState>((set, get) => ({
             get().stopScanning();
 
             console.log(`🔗 Connecting to: ${deviceId}...`);
+            isIntentionalDisconnect = false; // Reset the flag on new connection attempt
             set({ isConnecting: true, intentionalDisconnect: false, connectingDeviceId: deviceId, error: null });
 
             if (!bleManager) throw new Error('BLE Manager not initialized');
@@ -288,7 +290,7 @@ export const useBLEStore = create<BLEState>((set, get) => ({
                 set({ isConnected: false, connectedDevice: null });
 
                 // Se houver erro, ou se o utilizador NÃO pediu para desconectar: Tenta reconectar
-                if (CONFIG.AUTO_RECONNECT && !wasIntentional) {
+                if (CONFIG.AUTO_RECONNECT && (!wasIntentional && !isIntentionalDisconnect)) {
                     console.log(`⏳ Reconnecting in ${CONFIG.RECONNECT_DELAY_MS / 1000}s...`);
                     reconnectTimeout = setTimeout(() => {
                         get().connect(deviceId);
@@ -296,6 +298,7 @@ export const useBLEStore = create<BLEState>((set, get) => ({
                 } else if (wasIntentional) {
                     console.log('🛑 Intentional disconnect, disabling auto-reconnect for this session.');
                 }
+                isIntentionalDisconnect = false; // Reset flag after handling
             });
 
         } catch (error) {
@@ -319,6 +322,7 @@ export const useBLEStore = create<BLEState>((set, get) => ({
             }
             if (connectedDevice) {
                 console.log(`🔌 Disconnecting: ${connectedDevice.name}`);
+                isIntentionalDisconnect = true; // Set flag to prevent auto-reconnect
                 bleManager?.cancelDeviceConnection(connectedDevice.id);
             }
 
