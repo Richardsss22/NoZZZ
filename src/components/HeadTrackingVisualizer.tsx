@@ -27,8 +27,10 @@ export default function HeadTrackingVisualizer() {
     const radarPitch = gyroData?.pitch || 0;
     const eogRoll = liveRoll || 0;
     const eogPitch = livePitch || 0;
-    const headYaw = radarRoll !== 0 ? radarRoll : eogRoll;
-    const headPitch = radarPitch !== 0 ? radarPitch : eogPitch;
+
+    // Invert both axes to compensate for the physical 180-degree board rotation
+    const headYaw = -(radarRoll !== 0 ? radarRoll : eogRoll);
+    const headPitch = -(radarPitch !== 0 ? radarPitch : eogPitch);
 
     const targetYaw = React.useRef(0);
     const targetPitch = React.useRef(0);
